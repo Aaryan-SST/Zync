@@ -20,6 +20,7 @@ import helmet from "helmet";
 import config from "./config/env.js";
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
+import monitorRoutes from "./routes/monitor.routes.js";
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,7 @@ app.use(cookieParser());
 // Routes
 // ---------------------------------------------------------------------------
 app.use("/api/auth", authRoutes);
+app.use("/api/monitors", monitorRoutes);
 
 // Health-check (lightweight — no DB query)
 app.get("/api/health", (_req, res) => {

@@ -15,8 +15,9 @@ const config = Object.freeze({
   jwtSecret:    process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
   clientUrl:    process.env.CLIENT_URL ?? "http://localhost:5173",
-  nodeEnv:      process.env.NODE_ENV ?? "development",
-  isProd:       process.env.NODE_ENV === "production",
+  nodeEnv:          process.env.NODE_ENV ?? "development",
+  isProd:           process.env.NODE_ENV === "production",
+  allowPrivateUrls: process.env.ALLOW_PRIVATE_URLS === "true",
 });
 
 export default config;

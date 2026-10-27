@@ -5,11 +5,6 @@ import { generateTokenAndSetCookie, getCookieOptions } from "../utils/generateTo
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Basic email format check (Zod validation arrives in Lab 2). */
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
 /** Sanitise and return a user object safe to send in responses. */
 function sanitizeUser(user) {
   return {
@@ -27,26 +22,6 @@ function sanitizeUser(user) {
 export async function register(req, res, next) {
   try {
     const { name, email, password } = req.body;
-
-    // ── Inline field-level validation (Zod replaces this in Lab 2) ──────────
-    const errors = [];
-
-    if (!name || !name.trim()) {
-      errors.push({ field: "name", message: "Name is required" });
-    }
-
-    if (!email || !isValidEmail(email.trim())) {
-      errors.push({ field: "email", message: "A valid email is required" });
-    }
-
-    if (!password || password.length < 8) {
-      errors.push({ field: "password", message: "Password must be at least 8 characters" });
-    }
-
-    if (errors.length > 0) {
-      return res.status(400).json({ message: "Validation failed", errors });
-    }
-
     const normalizedEmail = email.trim().toLowerCase();
 
     // ── Duplicate check (also caught below via 11000) ──────────────────────
@@ -81,10 +56,6 @@ export async function register(req, res, next) {
 export async function login(req, res, next) {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required" });
-    }
 
     // Explicitly select password for comparison (select:false by default)
     const user = await User.findOne({ email: email.trim().toLowerCase() }).select("+password");
