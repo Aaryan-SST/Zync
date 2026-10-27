@@ -22,6 +22,7 @@ import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import monitorRoutes from "./routes/monitor.routes.js";
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
+import { startScheduler, stopScheduler } from "./services/scheduler.service.js";
 
 // ---------------------------------------------------------------------------
 // Express application
@@ -83,7 +84,7 @@ process.on("uncaughtException", (err) => {
 
 // ---------------------------------------------------------------------------
 // Boot sequence: DB first, HTTP listener second
-// Lab 3 note: start background monitor worker inside the .then() callback
+// Lab 3: startScheduler() launches once DB is connected and listener is bound
 // ---------------------------------------------------------------------------
 connectDB()
   .then(() => {
@@ -91,13 +92,35 @@ connectDB()
       console.log(
         `[server] Zync API running on port ${config.port} [${config.nodeEnv}]`
       );
-      // Lab 3: startMonitorWorker() — insert here after DB is confirmed ready
+      startScheduler();
     });
   })
   .catch((err) => {
     console.error("[server] Failed to connect to DB, shutting down:", err.message);
     process.exit(1);
   });
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown handling
+// ---------------------------------------------------------------------------
+function handleShutdown(signal) {
+  console.log(`[server] ${signal} signal received — shutting down gracefully`);
+  stopScheduler();
+
+  server.close(() => {
+    console.log("[server] HTTP server closed");
+    process.exit(0);
+  });
+
+  // Force exit after 10 seconds if connections refuse to close
+  setTimeout(() => {
+    console.error("[server] Forced termination after timeout");
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+process.on("SIGINT", () => handleShutdown("SIGINT"));
 
 // Export for future test utilities (Lab 4+)
 export { server, app };
