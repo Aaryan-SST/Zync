@@ -1,0 +1,27 @@
+{
+  "name": "zync-server",
+  "version": "1.0.0",
+  "description": "Zync API health monitoring backend",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.5.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
