@@ -8,6 +8,7 @@ import {
   getMonitorById,
   updateMonitor,
   deleteMonitor,
+  toggleMonitor,
 } from "../controllers/monitor.controller.js";
 
 const router = Router();
@@ -20,5 +21,6 @@ router.get("/", getMonitors);
 router.get("/:id", getMonitorById);
 router.put("/:id", validate(updateMonitorSchema), updateMonitor);
 router.delete("/:id", deleteMonitor);
+router.patch("/:id/toggle", toggleMonitor);
 
 export default router;

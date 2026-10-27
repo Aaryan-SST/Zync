@@ -26,6 +26,7 @@ import Monitor from "./models/monitor.model.js";
 import Incident from "./models/incident.model.js";
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
 import { startScheduler, stopScheduler } from "./services/scheduler.service.js";
+import { initSocket } from "./services/socket.service.js";
 
 // ---------------------------------------------------------------------------
 // Express application
@@ -100,6 +101,7 @@ connectDB()
       console.log(
         `[server] Zync API running on port ${config.port} [${config.nodeEnv}]`
       );
+      initSocket(server);
       startScheduler();
     });
   })

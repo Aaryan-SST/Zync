@@ -3,6 +3,7 @@ import axios from "axios";
 import Monitor from "../models/monitor.model.js";
 import Incident from "../models/incident.model.js";
 import config from "../config/env.js";
+import { getIO } from "./socket.service.js";
 import { isPrivateUrl } from "../controllers/monitor.controller.js";
 import { startTimer, stopTimer } from "../utils/latencyCalculator.js";
 import {
@@ -150,7 +151,7 @@ export async function handlePostPing(updatedMonitor, previousStatus, pingResult)
         await Incident.create({
           _id: preGeneratedId,
           monitorId: updatedMonitor._id,
-          userId: updatedMonitor.userId, // derived from monitor document
+          userId: updatedMonitor.userId,
           title: `${updatedMonitor.name} is DOWN`,
           status: INCIDENT_STATUSES.OPEN,
           causeStatusCode: pingResult.statusCode ?? null,
@@ -159,16 +160,20 @@ export async function handlePostPing(updatedMonitor, previousStatus, pingResult)
             : null,
           startedAt: new Date(),
         });
+
+        // Sync in-memory object reference for socket payload
+        updatedMonitor.activeIncidentId = preGeneratedId;
       } catch (createErr) {
         if (createErr.code === 11000) {
-          // Layer 3: Catch duplicate key race as "already open"
           console.warn(`[incident] Incident already open for monitor ${updatedMonitor._id}`);
+          updatedMonitor.activeIncidentId = preGeneratedId;
         } else {
           // Roll back atomic claim so monitor is not stuck with an unresolvable ID
           await Monitor.updateOne(
             { _id: updatedMonitor._id, activeIncidentId: preGeneratedId },
             { $set: { activeIncidentId: null } }
           );
+          updatedMonitor.activeIncidentId = null;
           throw createErr;
         }
       }
@@ -189,36 +194,62 @@ export async function handlePostPing(updatedMonitor, previousStatus, pingResult)
         { _id: updatedMonitor._id },
         { $set: { activeIncidentId: null, consecutiveFailures: 0 } }
       );
-      return;
-    }
+      updatedMonitor.activeIncidentId = null;
+      updatedMonitor.consecutiveFailures = 0;
+    } else {
+      if (incident.status === INCIDENT_STATUSES.OPEN) {
+        const now = new Date();
+        const started = incident.startedAt || incident.createdAt || now;
+        const rawDowntime = (now.getTime() - new Date(started).getTime()) / 1000;
+        const downtimeSeconds = Math.max(0, Math.round(rawDowntime));
 
-    if (incident.status === INCIDENT_STATUSES.OPEN) {
-      const now = new Date();
-      const started = incident.startedAt || incident.createdAt || now;
-      const rawDowntime = (now.getTime() - new Date(started).getTime()) / 1000;
-      const downtimeSeconds = Math.max(0, Math.round(rawDowntime));
+        // Idempotent conditional resolution
+        await Incident.findOneAndUpdate(
+          { _id: incidentId, status: INCIDENT_STATUSES.OPEN },
+          {
+            $set: {
+              status: INCIDENT_STATUSES.RESOLVED,
+              resolvedAt: now,
+              downtimeSeconds,
+            },
+          }
+        );
+      }
 
-      // Idempotent conditional resolution
-      await Incident.findOneAndUpdate(
-        { _id: incidentId, status: INCIDENT_STATUSES.OPEN },
-        {
-          $set: {
-            status: INCIDENT_STATUSES.RESOLVED,
-            resolvedAt: now,
-            downtimeSeconds,
-          },
-        }
+      // Reset monitor incident pointer and counter in DB
+      await Monitor.updateOne(
+        { _id: updatedMonitor._id },
+        { $set: { activeIncidentId: null, consecutiveFailures: 0 } }
       );
-    }
 
-    // Reset monitor incident pointer and counter
-    await Monitor.updateOne(
-      { _id: updatedMonitor._id },
-      { $set: { activeIncidentId: null, consecutiveFailures: 0 } }
-    );
+      // Sync in-memory object reference for socket payload
+      updatedMonitor.activeIncidentId = null;
+      updatedMonitor.consecutiveFailures = 0;
+    }
   }
 
-  // Lab 5: Socket.io real-time event broadcasting hooks in here
+  // Lab 5: Socket.io real-time event broadcasting
+  try {
+    const io = getIO();
+    if (io) {
+      const room = `user:${updatedMonitor.userId}`;
+      io.to(room).emit("PING_UPDATE", {
+        monitorId: updatedMonitor._id.toString(),
+        status: updatedMonitor.status,
+        responseTimeMs: pingResult.responseTimeMs,
+        statusCode: pingResult.statusCode ?? null,
+        isSuccess: pingResult.isSuccess,
+        timestamp: updatedMonitor.lastCheckedAt?.toISOString() ?? new Date().toISOString(),
+        errorMessage: pingResult.errorMessage ?? null,
+        consecutiveFailures: updatedMonitor.consecutiveFailures,
+        activeIncidentId: updatedMonitor.activeIncidentId
+          ? updatedMonitor.activeIncidentId.toString()
+          : null,
+      });
+    }
+  } catch (socketErr) {
+    console.error("[socket] Failed to emit PING_UPDATE:", socketErr.message);
+  }
 }
 
 // ── Per-Monitor Processor ────────────────────────────────────────────────────

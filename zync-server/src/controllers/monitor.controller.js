@@ -24,7 +24,6 @@ const PRIVATE_HOST_PATTERNS = [
 
 /**
  * Checks whether a URL points to a private, loopback, or link-local address.
- *
  * @param {string} urlString
  * @returns {boolean} true if host is private or invalid
  */
@@ -40,18 +39,15 @@ export function isPrivateUrl(urlString) {
 
 /**
  * Validates SSRF constraints based on environment configuration.
- *
  * @param {string} url
  * @param {import("express").Response} res
  * @returns {boolean} true if safe to proceed, false if response already sent
  */
 function validateSsrf(url, res) {
-  // If explicitly allowed (e.g. for local dev testing), skip check
   if (config.allowPrivateUrls) {
     return true;
   }
 
-  // Enforce in production or whenever private URLs are disallowed
   if (config.isProd || !config.allowPrivateUrls) {
     if (isPrivateUrl(url)) {
       res.status(400).json({
@@ -97,11 +93,9 @@ export async function createMonitor(req, res, next) {
 // ---------------------------------------------------------------------------
 export async function getMonitors(req, res, next) {
   try {
-    // Return only active monitors owned by current user, sorted newest-first.
-    // Slice pingHistory to the last 20 entries to keep payloads small.
+    // Returns all monitors owned by user (both active and paused) sorted newest-first
     const monitors = await Monitor.find({
       userId: req.user._id,
-      isActive: true,
     })
       .select({ pingHistory: { $slice: -20 } })
       .sort({ createdAt: -1 });
@@ -123,7 +117,6 @@ export async function getMonitorById(req, res, next) {
       return res.status(404).json({ message: "Monitor not found" });
     }
 
-    // Scoped strictly by userId — returns 404 for non-existent or other user's monitor
     const monitor = await Monitor.findOne({
       _id: id,
       userId: req.user._id,
@@ -154,7 +147,6 @@ export async function updateMonitor(req, res, next) {
       return;
     }
 
-    // Atomic scoped update with runValidators
     const monitor = await Monitor.findOneAndUpdate(
       { _id: id, userId: req.user._id },
       { $set: req.body },
@@ -182,7 +174,6 @@ export async function deleteMonitor(req, res, next) {
       return res.status(404).json({ message: "Monitor not found" });
     }
 
-    // Atomic scoped deletion
     const deleted = await Monitor.findOneAndDelete({
       _id: id,
       userId: req.user._id,
@@ -196,6 +187,35 @@ export async function deleteMonitor(req, res, next) {
     await Incident.deleteMany({ monitorId: id });
 
     return res.status(200).json({ message: "Monitor deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/monitors/:id/toggle
+// ---------------------------------------------------------------------------
+export async function toggleMonitor(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(404).json({ message: "Monitor not found" });
+    }
+
+    const monitor = await Monitor.findOne({
+      _id: id,
+      userId: req.user._id,
+    });
+
+    if (!monitor) {
+      return res.status(404).json({ message: "Monitor not found" });
+    }
+
+    monitor.isActive = !monitor.isActive;
+    await monitor.save();
+
+    return res.status(200).json({ monitor });
   } catch (err) {
     next(err);
   }
