@@ -9,7 +9,7 @@ This runbook covers the end-to-end production deployment and hardening for the *
 - **Frontend:** Single Page Application (React, Vite, Tailwind CSS, Recharts) hosted on **Vercel**
   - Production Domain: `https://zync-monitor.vercel.app`
 - **Backend:** Node.js ESM Express API, Socket.io server, and in-process Heartbeat Ping Scheduler hosted on **Render**
-  - Production Domain: `https://zync-backend.onrender.com`
+  - Production Domain: `https://zync-backend-cosy.onrender.com`
 - **Database:** MongoDB Atlas Managed Mongoose Cluster
 - **Authentication:** Cross-site `httpOnly`, `Secure`, `SameSite=None` JWT session cookie.
 
