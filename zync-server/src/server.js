@@ -21,6 +21,9 @@ import config from "./config/env.js";
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import monitorRoutes from "./routes/monitor.routes.js";
+import incidentRoutes from "./routes/incident.routes.js";
+import Monitor from "./models/monitor.model.js";
+import Incident from "./models/incident.model.js";
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
 import { startScheduler, stopScheduler } from "./services/scheduler.service.js";
 
@@ -52,6 +55,7 @@ app.use(cookieParser());
 // ---------------------------------------------------------------------------
 app.use("/api/auth", authRoutes);
 app.use("/api/monitors", monitorRoutes);
+app.use("/api/incidents", incidentRoutes);
 
 // Health-check (lightweight — no DB query)
 app.get("/api/health", (_req, res) => {
@@ -83,11 +87,15 @@ process.on("uncaughtException", (err) => {
 });
 
 // ---------------------------------------------------------------------------
-// Boot sequence: DB first, HTTP listener second
-// Lab 3: startScheduler() launches once DB is connected and listener is bound
+// Boot sequence: DB first, indexes built, HTTP listener & scheduler second
+// Lab 4: Ensure indexes are initialized before scheduler starts
 // ---------------------------------------------------------------------------
 connectDB()
-  .then(() => {
+  .then(async () => {
+    // Build and verify database indexes before background pings commence
+    await Promise.all([Monitor.init(), Incident.init()]);
+    console.log("[db] Monitor and Incident indexes verified");
+
     server.listen(config.port, () => {
       console.log(
         `[server] Zync API running on port ${config.port} [${config.nodeEnv}]`

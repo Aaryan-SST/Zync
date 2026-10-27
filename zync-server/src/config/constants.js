@@ -13,3 +13,11 @@ export const MONITOR_STATUSES = Object.freeze({
   DEGRADED:    "DEGRADED",
   DOWN:        "DOWN",
 });
+
+export const INCIDENT_FAILURE_THRESHOLD = 3;
+
+export const INCIDENT_STATUSES = Object.freeze({
+  OPEN:     "OPEN",
+  RESOLVED: "RESOLVED",
+});
+

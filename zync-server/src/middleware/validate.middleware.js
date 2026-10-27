@@ -10,30 +10,32 @@
  */
 export function validate(schema, options = {}) {
   return (req, res, next) => {
-    const result = schema.safeParse(req.body);
+    if (schema) {
+      const result = schema.safeParse(req.body);
 
-    if (!result.success) {
-      const errors = result.error.issues.map((issue) => {
-        let field = "_body";
-        if (issue.path.length > 0) {
-          field = issue.path.join(".");
-        } else if (issue.keys && issue.keys.length > 0) {
-          field = issue.keys.join(", ");
-        }
-        return {
-          field,
-          message: issue.message,
-        };
-      });
+      if (!result.success) {
+        const errors = result.error.issues.map((issue) => {
+          let field = "_body";
+          if (issue.path.length > 0) {
+            field = issue.path.join(".");
+          } else if (issue.keys && issue.keys.length > 0) {
+            field = issue.keys.join(", ");
+          }
+          return {
+            field,
+            message: issue.message,
+          };
+        });
 
-      return res.status(400).json({
-        message: "Validation failed",
-        errors,
-      });
+        return res.status(400).json({
+          message: "Validation failed",
+          errors,
+        });
+      }
+
+      // Replace req.body with the sanitized/coerced value
+      req.body = result.data;
     }
-
-    // Replace req.body with the sanitized/coerced value
-    req.body = result.data;
 
     // Optional params validation
     if (options.params) {

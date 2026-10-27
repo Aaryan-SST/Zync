@@ -1,9 +1,15 @@
+import mongoose from "mongoose";
 import axios from "axios";
 import Monitor from "../models/monitor.model.js";
+import Incident from "../models/incident.model.js";
 import config from "../config/env.js";
 import { isPrivateUrl } from "../controllers/monitor.controller.js";
 import { startTimer, stopTimer } from "../utils/latencyCalculator.js";
-import { MONITOR_STATUSES } from "../config/constants.js";
+import {
+  MONITOR_STATUSES,
+  INCIDENT_FAILURE_THRESHOLD,
+  INCIDENT_STATUSES,
+} from "../config/constants.js";
 
 const MAX_ERROR_MESSAGE_LENGTH = 300;
 const PING_HISTORY_CAP = 50;
@@ -123,8 +129,96 @@ export async function pingEndpoint(monitor) {
  * @param {object} pingResult - Full ping outcome { statusCode, responseTimeMs, isSuccess, newStatus, errorMessage }
  */
 export async function handlePostPing(updatedMonitor, previousStatus, pingResult) {
-  // Lab 4: Failure counter increment/reset and incident lifecycle automation
-  // Lab 5: Socket.io real-time event broadcasting
+  if (!updatedMonitor) return;
+
+  // 1. Incident Creation: consecutiveFailures >= INCIDENT_FAILURE_THRESHOLD and no active incident
+  if (
+    updatedMonitor.consecutiveFailures >= INCIDENT_FAILURE_THRESHOLD &&
+    !updatedMonitor.activeIncidentId
+  ) {
+    const preGeneratedId = new mongoose.Types.ObjectId();
+
+    // Layer 1: Atomic claim pre-setting activeIncidentId if currently null
+    const claimedMonitor = await Monitor.findOneAndUpdate(
+      { _id: updatedMonitor._id, activeIncidentId: null },
+      { $set: { activeIncidentId: preGeneratedId } },
+      { new: true }
+    );
+
+    if (claimedMonitor) {
+      try {
+        await Incident.create({
+          _id: preGeneratedId,
+          monitorId: updatedMonitor._id,
+          userId: updatedMonitor.userId, // derived from monitor document
+          title: `${updatedMonitor.name} is DOWN`,
+          status: INCIDENT_STATUSES.OPEN,
+          causeStatusCode: pingResult.statusCode ?? null,
+          errorLog: pingResult.errorMessage
+            ? pingResult.errorMessage.slice(0, 300)
+            : null,
+          startedAt: new Date(),
+        });
+      } catch (createErr) {
+        if (createErr.code === 11000) {
+          // Layer 3: Catch duplicate key race as "already open"
+          console.warn(`[incident] Incident already open for monitor ${updatedMonitor._id}`);
+        } else {
+          // Roll back atomic claim so monitor is not stuck with an unresolvable ID
+          await Monitor.updateOne(
+            { _id: updatedMonitor._id, activeIncidentId: preGeneratedId },
+            { $set: { activeIncidentId: null } }
+          );
+          throw createErr;
+        }
+      }
+    }
+  }
+
+  // 2. Incident Resolution: monitor recovers to OPERATIONAL (DEGRADED keeps incident open)
+  if (
+    pingResult.newStatus === MONITOR_STATUSES.OPERATIONAL &&
+    updatedMonitor.activeIncidentId
+  ) {
+    const incidentId = updatedMonitor.activeIncidentId;
+    const incident = await Incident.findById(incidentId);
+
+    if (!incident) {
+      // Self-healing: activeIncidentId points to non-existent document
+      await Monitor.updateOne(
+        { _id: updatedMonitor._id },
+        { $set: { activeIncidentId: null, consecutiveFailures: 0 } }
+      );
+      return;
+    }
+
+    if (incident.status === INCIDENT_STATUSES.OPEN) {
+      const now = new Date();
+      const started = incident.startedAt || incident.createdAt || now;
+      const rawDowntime = (now.getTime() - new Date(started).getTime()) / 1000;
+      const downtimeSeconds = Math.max(0, Math.round(rawDowntime));
+
+      // Idempotent conditional resolution
+      await Incident.findOneAndUpdate(
+        { _id: incidentId, status: INCIDENT_STATUSES.OPEN },
+        {
+          $set: {
+            status: INCIDENT_STATUSES.RESOLVED,
+            resolvedAt: now,
+            downtimeSeconds,
+          },
+        }
+      );
+    }
+
+    // Reset monitor incident pointer and counter
+    await Monitor.updateOne(
+      { _id: updatedMonitor._id },
+      { $set: { activeIncidentId: null, consecutiveFailures: 0 } }
+    );
+  }
+
+  // Lab 5: Socket.io real-time event broadcasting hooks in here
 }
 
 // ── Per-Monitor Processor ────────────────────────────────────────────────────
@@ -188,21 +282,30 @@ async function persistPingResult(monitor, pingResult) {
   };
 
   // Atomic update: sets new status and lastCheckedAt, and prepends/appends history capped at 50
-  // Returns null quietly if the document no longer exists
-  const updated = await Monitor.findOneAndUpdate(
-    { _id: monitor._id, isActive: true },
-    {
-      $set: {
-        status: newStatus,
-        lastCheckedAt: now,
-      },
-      $push: {
-        pingHistory: {
-          $each: [historyEntry],
-          $slice: -PING_HISTORY_CAP, // Keep only the latest 50 entries
-        },
+  // Down results increment consecutiveFailures; non-down results reset consecutiveFailures to 0
+  const isDown = newStatus === MONITOR_STATUSES.DOWN;
+
+  const updateDoc = {
+    $set: {
+      status: newStatus,
+      lastCheckedAt: now,
+      ...(isDown ? {} : { consecutiveFailures: 0 }),
+    },
+    $push: {
+      pingHistory: {
+        $each: [historyEntry],
+        $slice: -PING_HISTORY_CAP, // Keep only the latest 50 entries
       },
     },
+  };
+
+  if (isDown) {
+    updateDoc.$inc = { consecutiveFailures: 1 };
+  }
+
+  const updated = await Monitor.findOneAndUpdate(
+    { _id: monitor._id, isActive: true },
+    updateDoc,
     { new: true }
   );
 

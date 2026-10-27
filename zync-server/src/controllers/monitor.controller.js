@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Monitor from "../models/monitor.model.js";
+import Incident from "../models/incident.model.js";
 import config from "../config/env.js";
 
 // ---------------------------------------------------------------------------
@@ -190,6 +191,9 @@ export async function deleteMonitor(req, res, next) {
     if (!deleted) {
       return res.status(404).json({ message: "Monitor not found" });
     }
+
+    // Cascade deletion: purge all incidents associated with this deleted monitor
+    await Incident.deleteMany({ monitorId: id });
 
     return res.status(200).json({ message: "Monitor deleted successfully" });
   } catch (err) {
