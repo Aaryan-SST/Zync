@@ -1,7 +1,13 @@
 import axios from "axios";
 
+// In production, VITE_API_BASE_URL points to the live backend (e.g. https://zync-backend.onrender.com/api)
+// In local dev without env set, defaults to "/api" which is forwarded by Vite's dev server proxy
+const baseURL = import.meta.env.VITE_API_BASE_URL
+  ? import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, "")
+  : "/api";
+
 const api = axios.create({
-  baseURL: "/api",
+  baseURL,
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",

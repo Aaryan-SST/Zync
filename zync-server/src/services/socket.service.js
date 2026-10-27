@@ -40,6 +40,7 @@ export function initSocket(httpServer) {
     cors: {
       origin: config.clientUrl,
       credentials: true,
+      methods: ["GET", "POST"],
     },
   });
 

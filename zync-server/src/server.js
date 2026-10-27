@@ -15,6 +15,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
+import mongoose from "mongoose";
 
 // Config import must come first — triggers dotenv + required-var validation
 import config from "./config/env.js";
@@ -22,6 +23,7 @@ import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import monitorRoutes from "./routes/monitor.routes.js";
 import incidentRoutes from "./routes/incident.routes.js";
+import healthRoutes from "./routes/health.routes.js";
 import Monitor from "./models/monitor.model.js";
 import Incident from "./models/incident.model.js";
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
@@ -33,14 +35,19 @@ import { initSocket } from "./services/socket.service.js";
 // ---------------------------------------------------------------------------
 const app = express();
 
+// Trust reverse proxy (Render, AWS ELB, etc.) for accurate client IP resolution & secure cookies
+app.set("trust proxy", 1);
+
 // Security headers (must precede routes)
 app.use(helmet());
 
 // CORS — exact CLIENT_URL only, never wildcard; credentials required for cookies
 app.use(
   cors({
-    origin:      config.clientUrl,
-    credentials: true,
+    origin:         config.clientUrl,
+    credentials:    true,
+    methods:        ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -54,14 +61,10 @@ app.use(cookieParser());
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/monitors", monitorRoutes);
 app.use("/api/incidents", incidentRoutes);
-
-// Health-check (lightweight — no DB query)
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
-});
 
 // ---------------------------------------------------------------------------
 // Error handling (always last)
@@ -117,8 +120,14 @@ function handleShutdown(signal) {
   console.log(`[server] ${signal} signal received — shutting down gracefully`);
   stopScheduler();
 
-  server.close(() => {
+  server.close(async () => {
     console.log("[server] HTTP server closed");
+    try {
+      await mongoose.connection.close();
+      console.log("[db] MongoDB connection closed cleanly");
+    } catch (dbErr) {
+      console.error("[db] Error closing MongoDB connection:", dbErr.message);
+    }
     process.exit(0);
   });
 

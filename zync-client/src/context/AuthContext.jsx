@@ -32,7 +32,16 @@ export function AuthProvider({ children }) {
   // Socket.io connection lifecycle tied to authenticated user session
   useEffect(() => {
     if (user) {
-      const socketUrl = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+      // Derive socket server URL directly from VITE_API_BASE_URL by stripping /api
+      let socketUrl;
+      if (import.meta.env.VITE_SOCKET_URL) {
+        socketUrl = import.meta.env.VITE_SOCKET_URL;
+      } else if (import.meta.env.VITE_API_BASE_URL) {
+        socketUrl = import.meta.env.VITE_API_BASE_URL.replace(/\/api\/?$/, "");
+      } else {
+        socketUrl = typeof window !== "undefined" ? window.location.origin : "http://localhost:5000";
+      }
+
       const newSocket = io(socketUrl, {
         withCredentials: true,
         transports: ["websocket", "polling"],
