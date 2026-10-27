@@ -1,3 +1,5 @@
+// zync-client/src/context/AuthContext.jsx
+
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { getCurrentUser, loginUser, registerUser, logoutUser } from "../services/api.js";
@@ -8,7 +10,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [socket, setSocket] = useState(null);
-  const [isConnected, setIsConnected] = useState(false); // 1. Add connection state
+  const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
 
   // Initial session restoration check
@@ -50,7 +52,6 @@ export function AuthProvider({ children }) {
       socketRef.current = newSocket;
       setSocket(newSocket);
 
-      // 2. Update isConnected state on socket events
       newSocket.on("connect", () => {
         console.log("[socket] Connected to real-time server with id:", newSocket.id);
         setIsConnected(true);
@@ -118,7 +119,7 @@ export function AuthProvider({ children }) {
         user,
         isLoading,
         socket,
-        isConnected, // 3. Export isConnected in context
+        isConnected,
         login,
         register,
         logout,
